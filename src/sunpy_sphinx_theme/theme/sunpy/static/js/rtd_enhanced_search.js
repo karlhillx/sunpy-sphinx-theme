@@ -34,14 +34,25 @@
 
 */
 /*jshint esversion: 6 */
-// Capture the current RTD version so search results stay on the version
-// the user is reading. Without this, the v3 search API defaults to the
+// Capture the current RTD project and version so search results stay on the
+// version the user is reading. Without this, the v3 search API defaults to the
 // project's default version (usually stable) and results link elsewhere.
+let _rtdProject = null;
 let _rtdVersion = null;
 document.addEventListener("readthedocs-addons-data-ready", function (event) {
   try {
-    _rtdVersion = event.detail.data().versions.current.slug;
+    const data = event.detail.data();
+    // Pull request previews are external versions and are not indexed. Pinning
+    // search to one would therefore return no results at all.
+    if (data.versions.current.type === "external") {
+      _rtdProject = null;
+      _rtdVersion = null;
+      return;
+    }
+    _rtdProject = data.projects.current.slug;
+    _rtdVersion = data.versions.current.slug;
   } catch (e) {
+    _rtdProject = null;
     _rtdVersion = null;
   }
 });
@@ -252,6 +263,13 @@ document.addEventListener("readthedocs-addons-data-ready", function (event) {
       form.classList.add("loading");
 
       let projstr = this.projectorder
+        .map(function (slug) {
+          // Only the project being read shares its current version. Other
+          // projects in this cross-project search keep their own defaults.
+          return _rtdProject && _rtdVersion && slug === _rtdProject
+            ? slug + "/" + _rtdVersion
+            : slug;
+        })
         .join("+project:")
         .replace(new RegExp("^" + config.all + "[s+]"), "");
       let url;
@@ -260,8 +278,7 @@ document.addEventListener("readthedocs-addons-data-ready", function (event) {
       } else {
         url =
           (debug ? "https://corsproxy.io/?https://readthedocs.org/" : "/_/") +
-          ("api/v3/search/?q=" + projstr + "+" + encodeURIComponent(str)) +
-          (_rtdVersion ? "&version=" + encodeURIComponent(_rtdVersion) : "");
+          ("api/v3/search/?q=" + projstr + "+" + encodeURIComponent(str));
       }
       console.info("Getting " + url);
       fetch(url, {})
